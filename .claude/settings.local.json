@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /Users/korovsidit/Desktop/ 2>&1 | head -30 && echo \"---\" && pwd)",
+      "Read(//Users/korovsidit/Desktop/**)",
+      "Bash(cd \"/Users/korovsidit/Desktop/Telethon \" && mkdir -p db parser ai handlers formatters jobs utils && ls -la)"
+    ],
+    "additionalDirectories": [
+      "/Users/korovsidit/Desktop/Telethon "
+    ]
+  }
+}
