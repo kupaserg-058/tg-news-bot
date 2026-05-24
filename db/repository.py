@@ -71,7 +71,7 @@ async def bulk_insert_posts(posts: list[dict]) -> int:
             await conn.executemany(
                 """
                 INSERT INTO posts (channel_id, tg_message_id, text, posted_at, link, embedding)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES ($1, $2, $3, $4, $5, $6::vector)
                 ON CONFLICT (channel_id, tg_message_id) DO NOTHING
                 """,
                 [
@@ -128,7 +128,7 @@ async def set_post_embeddings(items: list[tuple[int, np.ndarray | None]]) -> int
     pool = get_pool()
     async with pool.acquire() as conn:
         await conn.executemany(
-            "UPDATE posts SET embedding = $2 WHERE id = $1",
+            "UPDATE posts SET embedding = $2::vector WHERE id = $1",
             payload,
         )
     return len(payload)
@@ -243,15 +243,15 @@ async def search_posts_semantic(
         where.append(f"c.type = ${len(params)}")
     params.append(threshold)
     params.append(limit)
-    # cosine distance = 1 - cosine similarity; threshold для distance = 1 - sim_threshold
+    # qvec приходит как text '[..]', cast в ::vector внутри SQL.
     sql = (
         "SELECT p.id, p.text, p.posted_at, p.link, "
         "c.username AS channel_username, c.type AS channel_type, c.title AS channel_title, "
-        f"1 - (p.embedding <=> $1) AS similarity "
+        f"1 - (p.embedding <=> $1::vector) AS similarity "
         "FROM posts p JOIN channels c ON c.id = p.channel_id "
         f"WHERE {' AND '.join(where)} "
-        f"AND (1 - (p.embedding <=> $1)) >= ${len(params) - 1} "
-        f"ORDER BY p.embedding <=> $1 LIMIT ${len(params)}"
+        f"AND (1 - (p.embedding <=> $1::vector)) >= ${len(params) - 1} "
+        f"ORDER BY p.embedding <=> $1::vector LIMIT ${len(params)}"
     )
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)

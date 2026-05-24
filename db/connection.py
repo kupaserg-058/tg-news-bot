@@ -10,13 +10,10 @@ _pgvector_available: bool = False  # выставляется в migrations.appl
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
-    """Регистрирует pgvector-кодек если расширение установлено."""
-    try:
-        from pgvector.asyncpg import register_vector
-        await register_vector(conn)
-    except Exception:
-        # extension не установлено или библиотека недоступна — работаем без векторов
-        pass
+    """Намеренно НЕ регистрируем pgvector-кодек: мы передаём векторы как text '[...]'
+    и явно кастуем в ::vector в SQL. Это работает и когда расширение есть, и когда нет,
+    и не требует синхронизации с register_vector в каждом соединении."""
+    return
 
 
 def _safe_dsn_label(dsn: str) -> str:

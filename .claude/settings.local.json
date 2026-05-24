@@ -10,7 +10,10 @@
       "Read(//Users/korovsidit/**)",
       "Bash(git mv *)",
       "Bash(mv jobs/embed_backfill.py jobs/embed_recent.py)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(grep -i \".env$\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/Users/korovsidit/Desktop/Telethon ",
