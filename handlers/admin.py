@@ -1,0 +1,72 @@
+"""Админ-команды: /clear_cache, /stats."""
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from db.connection import get_pool, is_pgvector_available
+from db import repository as repo
+from handlers.common import owner_only, safe_send
+from formatters.utils import escape_html
+
+
+@owner_only
+async def clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/clear_cache [тип] — чистит Gemini-кеш. Без аргумента — весь кеш. Тип: digest|search|why|context|map|free."""
+    pool = get_pool()
+    query_type = context.args[0].lower() if context.args else None
+
+    async with pool.acquire() as conn:
+        if query_type:
+            result = await conn.execute(
+                "DELETE FROM gemini_cache WHERE query_type = $1", query_type,
+            )
+        else:
+            result = await conn.execute("DELETE FROM gemini_cache")
+    parts = result.split()
+    deleted = int(parts[1]) if len(parts) == 2 else 0
+    suffix = f" для типа <code>{escape_html(query_type)}</code>" if query_type else ""
+    await safe_send(update, f"🧹 Удалено записей кеша{suffix}: <b>{deleted}</b>")
+
+
+@owner_only
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        n_channels = await conn.fetchval("SELECT COUNT(*) FROM channels")
+        n_posts = await conn.fetchval("SELECT COUNT(*) FROM posts")
+        n_cache = await conn.fetchval("SELECT COUNT(*) FROM gemini_cache WHERE expires_at > NOW()")
+        if is_pgvector_available():
+            n_with_emb = await conn.fetchval("SELECT COUNT(*) FROM posts WHERE embedding IS NOT NULL")
+            n_no_emb = n_posts - n_with_emb
+        else:
+            n_with_emb = 0
+            n_no_emb = 0
+        per_channel = await conn.fetch(
+            """
+            SELECT c.username, c.type,
+                   COUNT(p.id) AS n_total,
+                   COUNT(p.embedding) AS n_with_emb
+            FROM channels c LEFT JOIN posts p ON p.channel_id = c.id
+            GROUP BY c.id ORDER BY n_total DESC LIMIT 30
+            """
+        )
+
+    lines = [
+        "<b>📊 Статистика Марка</b>",
+        f"Каналов: <b>{n_channels}</b>",
+        f"Постов всего: <b>{n_posts}</b>",
+    ]
+    if is_pgvector_available():
+        pct = (100 * n_with_emb // max(1, n_posts)) if n_posts else 0
+        lines.append(f"С embedding: <b>{n_with_emb}</b> / {n_posts} ({pct}%)")
+        if n_no_emb:
+            lines.append(f"<i>Без embedding: {n_no_emb} (фоновая задача догонит свежие; старые остаются как есть)</i>")
+    else:
+        lines.append("pgvector: <b>выключен</b> — семантика недоступна")
+    lines.append(f"Записей в кеше Gemini: <b>{n_cache}</b>")
+    lines.append("")
+    lines.append("<b>По каналам:</b>")
+    for r in per_channel:
+        emb_label = f" · emb {r['n_with_emb']}/{r['n_total']}" if is_pgvector_available() and r["n_total"] else ""
+        lines.append(f'• {escape_html(r["username"])} <i>({r["type"]})</i> — {r["n_total"]}{emb_label}')
+    await safe_send(update, "\n".join(lines))

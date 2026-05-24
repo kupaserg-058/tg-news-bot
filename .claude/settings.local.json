@@ -3,10 +3,18 @@
     "allow": [
       "Bash(ls -la /Users/korovsidit/Desktop/ 2>&1 | head -30 && echo \"---\" && pwd)",
       "Read(//Users/korovsidit/Desktop/**)",
-      "Bash(cd \"/Users/korovsidit/Desktop/Telethon \" && mkdir -p db parser ai handlers formatters jobs utils && ls -la)"
+      "Bash(cd \"/Users/korovsidit/Desktop/Telethon \" && mkdir -p db parser ai handlers formatters jobs utils && ls -la)",
+      "Bash(rm \"/Users/korovsidit/Desktop/Telethon /handlers/test_ai.py\")",
+      "Bash(git check-ignore *)",
+      "Bash(pwd && ls -la ~/ | grep -i telethon)",
+      "Read(//Users/korovsidit/**)",
+      "Bash(git mv *)",
+      "Bash(mv jobs/embed_backfill.py jobs/embed_recent.py)",
+      "Bash(git add *)"
     ],
     "additionalDirectories": [
-      "/Users/korovsidit/Desktop/Telethon "
+      "/Users/korovsidit/Desktop/Telethon ",
+      "/Users/korovsidit/Desktop/Telethon /handlers"
     ]
   }
 }

@@ -17,6 +17,8 @@ REQUIRED = [
 OPTIONAL_DEFAULTS = {
     "DIGEST_TIME_MORNING": "09:00",
     "DIGEST_TIME_EVENING": "21:00",
+    "DIGEST_INTERVAL_HOURS": "0",  # 0 = выключено; >0 = присылать каждые N часов
+    "DISABLE_EMBEDDINGS": "0",     # 1 = семантика отключена, работаем только на ts-поиске
 }
 
 
@@ -37,6 +39,8 @@ def load_env() -> dict:
 
     env["TELEGRAM_API_ID"] = int(env["TELEGRAM_API_ID"])
     env["OWNER_CHAT_ID"] = int(env["OWNER_CHAT_ID"])
+    env["DIGEST_INTERVAL_HOURS"] = int(env["DIGEST_INTERVAL_HOURS"])
+    env["DISABLE_EMBEDDINGS"] = env["DISABLE_EMBEDDINGS"] in ("1", "true", "True", "yes")
 
     log.info("Переменные окружения загружены, все обязательные на месте")
     return env
