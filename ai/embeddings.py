@@ -61,6 +61,27 @@ def vector_to_pg(v: np.ndarray | list[float] | None) -> str | None:
     return "[" + ",".join(f"{x:.6f}" for x in arr) + "]"
 
 
+def pg_to_vector(s) -> np.ndarray | None:
+    """Десериализация pgvector ('[x,y,z]' или уже ndarray) обратно в numpy. None если пусто/мусор."""
+    if s is None:
+        return None
+    if isinstance(s, np.ndarray):
+        return s.astype(np.float32, copy=False)
+    if isinstance(s, (list, tuple)):
+        if not s:
+            return None
+        return np.asarray(s, dtype=np.float32)
+    if isinstance(s, str):
+        body = s.strip().strip("[]").strip()
+        if not body:
+            return None
+        try:
+            return np.fromstring(body, dtype=np.float32, sep=",")
+        except Exception:
+            return None
+    return None
+
+
 async def _embed_single(
     client: httpx.AsyncClient, model: str, text: str, task_type: str
 ) -> Optional[np.ndarray]:

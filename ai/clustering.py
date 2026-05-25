@@ -19,12 +19,22 @@ def _cosine_matrix(vectors: list[np.ndarray]) -> np.ndarray:
 def greedy_cluster(posts: list[dict], threshold: float = 0.72) -> dict[int, int]:
     """Возвращает {post_index: cluster_id}. Жадный алгоритм: первый непомеченный пост — новый кластер,
     к нему добавляются все непомеченные посты с similarity >= threshold."""
-    vectors = [p.get("embedding") for p in posts]
+    vectors: list = []
+    for p in posts:
+        v = p.get("embedding")
+        if v is None:
+            vectors.append(None)
+        elif isinstance(v, np.ndarray) and v.size > 0:
+            vectors.append(v)
+        else:
+            # str/list/прочее — пропускаем как невалидное
+            vectors.append(None)
     valid_mask = [v is not None for v in vectors]
     if not any(valid_mask):
         return {i: i for i in range(len(posts))}
 
-    sims = _cosine_matrix([v if v is not None else np.zeros_like(vectors[valid_mask.index(True)]) for v in vectors])
+    first_valid = vectors[valid_mask.index(True)]
+    sims = _cosine_matrix([v if v is not None else np.zeros_like(first_valid) for v in vectors])
     n = len(posts)
     assignment: dict[int, int] = {}
     cluster_id = 0

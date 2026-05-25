@@ -170,7 +170,8 @@ def _post_select_sql() -> str:
 async def get_posts_last_hours(hours: int = 24, limit: int = 300, with_embeddings: bool = False) -> list[dict]:
     pool = get_pool()
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    extra = ", p.embedding " if (with_embeddings and is_pgvector_available()) else ""
+    want_emb = with_embeddings and is_pgvector_available()
+    extra = ", p.embedding " if want_emb else ""
     sql = (
         f"SELECT p.id, p.text, p.posted_at, p.link, "
         f"c.username AS channel_username, c.type AS channel_type, c.title AS channel_title{extra} "
@@ -179,7 +180,12 @@ async def get_posts_last_hours(hours: int = 24, limit: int = 300, with_embedding
     )
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, since, limit)
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    if want_emb:
+        from ai.embeddings import pg_to_vector
+        for r in result:
+            r["embedding"] = pg_to_vector(r.get("embedding"))
+    return result
 
 
 # Алиас для обратной совместимости (используется в старом коде).
