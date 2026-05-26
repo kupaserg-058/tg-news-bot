@@ -19,7 +19,8 @@
       "Bash(python3 -c \"import sys; sys.path.insert\\(0, '.'\\); import main; print\\('SMOKE OK'\\)\")",
       "Bash(PATH='/Users/korovsidit/Desktop/Telethon /.venv/bin:__TRACKED_VAR__' python3 -c 'import main; print\\('\\\\''SMOKE OK'\\\\''\\)')",
       "Bash(.venv/bin/python -c \"import main; import ai.classifier; import jobs.classify_recent; import handlers.categories_settings; import handlers.menu; print\\('OK'\\)\")",
-      "Bash(.venv/bin/python -c \"import main; print\\('OK'\\)\")"
+      "Bash(.venv/bin/python -c \"import main; print\\('OK'\\)\")",
+      "Bash(.venv/bin/python -c ' *)"
     ],
     "additionalDirectories": [
       "/Users/korovsidit/Desktop/Telethon ",

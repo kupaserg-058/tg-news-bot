@@ -99,28 +99,38 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def test_keys(update, context) -> None:
     """/test_keys — прогоняет каждый Gemini-ключ тестовым GET и показывает статус."""
     rotator = get_rotator()
-    keys = rotator._keys  # доступ к приватному ОК, мы внутри проекта
+    keys = rotator._keys
     await safe_send(update, f"🔑 Проверяю {len(keys)} ключ(ей)...")
+
+    # Типичная длина ключа Gemini — 39 символов. Сильно больше → склеилось несколько.
+    TYPICAL_LEN = 39
 
     lines = ["<b>🔑 Проверка ключей</b>", ""]
     async with httpx.AsyncClient(timeout=15.0) as client:
         for i, k in enumerate(keys, 1):
             preview = f"{k[:8]}…{k[-4:]}" if len(k) > 12 else k
+            length_note = f" · длина {len(k)}"
+            if len(k) > TYPICAL_LEN + 5:
+                length_note += " ⚠️ <i>(возможно склеено несколько ключей — проверь разделители в Variables)</i>"
+
             try:
                 resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={k}")
                 if resp.status_code == 200:
                     n = len(resp.json().get("models", []))
-                    lines.append(f"✅ #{i} <code>{preview}</code> — рабочий, доступно моделей: {n}")
-                elif resp.status_code == 400 and "API_KEY_INVALID" in resp.text:
-                    lines.append(f"❌ #{i} <code>{preview}</code> — невалидный ключ")
+                    lines.append(f"✅ #{i} <code>{preview}</code>{length_note} — рабочий, моделей: {n}")
+                elif resp.status_code == 400 and ("API_KEY_INVALID" in resp.text or "API key not valid" in resp.text):
+                    lines.append(f"❌ #{i} <code>{preview}</code>{length_note} — невалидный ключ")
+                    rotator.mark_key_broken(k, "test_keys: API_KEY_INVALID")
                 elif resp.status_code == 403:
-                    lines.append(f"❌ #{i} <code>{preview}</code> — нет прав (Generative Language API не включён?)")
+                    lines.append(f"❌ #{i} <code>{preview}</code>{length_note} — нет прав (Generative Language API не включён в проекте?)")
+                    rotator.mark_key_broken(k, "test_keys: 403")
                 elif resp.status_code == 429:
-                    lines.append(f"⏸ #{i} <code>{preview}</code> — 429 (квота исчерпана прямо сейчас)")
+                    lines.append(f"⏸ #{i} <code>{preview}</code>{length_note} — 429 (квота исчерпана прямо сейчас)")
+                    rotator.mark_quota_exhausted(k)
                 else:
-                    lines.append(f"⚠️ #{i} <code>{preview}</code> — HTTP {resp.status_code}: {escape_html(resp.text[:150])}")
+                    lines.append(f"⚠️ #{i} <code>{preview}</code>{length_note} — HTTP {resp.status_code}: {escape_html(resp.text[:150])}")
             except Exception as e:
-                lines.append(f"⚠️ #{i} <code>{preview}</code> — сеть упала: {type(e).__name__}")
+                lines.append(f"⚠️ #{i} <code>{preview}</code>{length_note} — сеть упала: {type(e).__name__}")
 
     # Статус cooldown'ов
     lines.append("")

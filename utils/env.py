@@ -22,16 +22,26 @@ OPTIONAL_DEFAULTS = {
 }
 
 
+import re
+
+_KEY_SEP_RE = re.compile(r"[,;\s]+")  # запятая, точка с запятой, любой whitespace
+
+
 def _parse_gemini_keys() -> list[str]:
-    """Собирает все доступные Gemini-ключи: GEMINI_API_KEYS (csv) + опционально GEMINI_API_KEY.
-    Хотя бы один должен быть задан."""
+    """Собирает все доступные Gemini-ключи. Разделители: запятая, ;, пробелы, переносы.
+    Делает базовую санитизацию каждого ключа от невидимых символов."""
     keys: list[str] = []
     multi = os.getenv("GEMINI_API_KEYS", "")
-    for k in multi.split(","):
+    for k in _KEY_SEP_RE.split(multi):
+        # Убираем zero-width и неразрывные пробелы которые иногда вставляются при копировании
+        k = "".join(ch for ch in k if ch.isprintable() and ch not in " ​‌‍﻿")
         k = k.strip()
         if k:
             keys.append(k)
-    single = os.getenv("GEMINI_API_KEY", "").strip()
+    single = "".join(
+        ch for ch in os.getenv("GEMINI_API_KEY", "")
+        if ch.isprintable() and ch not in " ​‌‍﻿"
+    ).strip()
     if single and single not in keys:
         keys.append(single)
     return keys
