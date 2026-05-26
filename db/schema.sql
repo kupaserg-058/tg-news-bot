@@ -58,3 +58,17 @@ CREATE TABLE IF NOT EXISTS query_log (
     query       TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Категория поста (заполняется AI-классификатором). NULL = ещё не классифицирован.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS category TEXT;
+CREATE INDEX IF NOT EXISTS idx_posts_category ON posts (category) WHERE category IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_category_posted ON posts (category, posted_at DESC) WHERE category IS NOT NULL;
+
+-- Пользовательские настройки: какие категории включены в автодайджест.
+-- Отсутствие записи = категория включена по умолчанию (opt-out).
+CREATE TABLE IF NOT EXISTS user_category_settings (
+    user_id      BIGINT NOT NULL,
+    category_id  TEXT NOT NULL,
+    enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+    PRIMARY KEY (user_id, category_id)
+);

@@ -167,25 +167,120 @@ def _post_select_sql() -> str:
     )
 
 
-async def get_posts_last_hours(hours: int = 24, limit: int = 300, with_embeddings: bool = False) -> list[dict]:
+async def get_posts_last_hours(
+    hours: int = 24,
+    limit: int = 300,
+    with_embeddings: bool = False,
+    category: str | None = None,
+    exclude_categories: list[str] | None = None,
+) -> list[dict]:
+    """Если category задана — фильтрует по ней. Если exclude_categories — исключает их.
+    Посты с category=NULL попадают в общую выдачу, но не попадают если фильтруем по конкретной."""
     pool = get_pool()
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     want_emb = with_embeddings and is_pgvector_available()
     extra = ", p.embedding " if want_emb else ""
+
+    params: list = [since]
+    where = ["p.posted_at >= $1"]
+    if category:
+        params.append(category)
+        where.append(f"p.category = ${len(params)}")
+    elif exclude_categories:
+        params.append(list(exclude_categories))
+        where.append(f"(p.category IS NULL OR p.category != ALL(${len(params)}::text[]))")
+    params.append(limit)
     sql = (
-        f"SELECT p.id, p.text, p.posted_at, p.link, "
+        f"SELECT p.id, p.text, p.posted_at, p.link, p.category, "
         f"c.username AS channel_username, c.type AS channel_type, c.title AS channel_title{extra} "
         f"FROM posts p JOIN channels c ON c.id = p.channel_id "
-        f"WHERE p.posted_at >= $1 ORDER BY p.posted_at DESC LIMIT $2"
+        f"WHERE {' AND '.join(where)} ORDER BY p.posted_at DESC LIMIT ${len(params)}"
     )
     async with pool.acquire() as conn:
-        rows = await conn.fetch(sql, since, limit)
+        rows = await conn.fetch(sql, *params)
     result = [dict(r) for r in rows]
     if want_emb:
         from ai.embeddings import pg_to_vector
         for r in result:
             r["embedding"] = pg_to_vector(r.get("embedding"))
     return result
+
+
+# --- категории постов ---
+
+async def get_posts_without_category(limit: int = 25, fresh_days: int = 2) -> list[dict]:
+    pool = get_pool()
+    since = datetime.now(timezone.utc) - timedelta(days=fresh_days)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, text FROM posts "
+            "WHERE category IS NULL AND posted_at >= $1 "
+            "ORDER BY posted_at DESC LIMIT $2",
+            since, limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def set_post_categories(items: list[tuple[int, str | None]]) -> int:
+    """items: [(post_id, category_id или None)]. Возвращает число обновлённых."""
+    payload = [(pid, cat) for pid, cat in items if cat is not None]
+    if not payload:
+        return 0
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.executemany(
+            "UPDATE posts SET category = $2 WHERE id = $1",
+            payload,
+        )
+    return len(payload)
+
+
+async def count_posts_without_category(fresh_days: int = 2) -> int:
+    pool = get_pool()
+    since = datetime.now(timezone.utc) - timedelta(days=fresh_days)
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT COUNT(*) FROM posts WHERE category IS NULL AND posted_at >= $1",
+            since,
+        )
+
+
+async def get_category_counts_last_hours(hours: int = 24) -> dict[str, int]:
+    """{category_id: count} для постов за окно. Категория NULL → ключ 'unknown'."""
+    pool = get_pool()
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT COALESCE(category, 'unknown') AS cat, COUNT(*) AS n "
+            "FROM posts WHERE posted_at >= $1 GROUP BY category",
+            since,
+        )
+    return {r["cat"]: r["n"] for r in rows}
+
+
+# --- настройки категорий пользователя ---
+
+async def get_disabled_categories(user_id: int) -> set[str]:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT category_id FROM user_category_settings WHERE user_id = $1 AND enabled = FALSE",
+            user_id,
+        )
+    return {r["category_id"] for r in rows}
+
+
+async def set_category_enabled(user_id: int, category_id: str, enabled: bool) -> None:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_category_settings (user_id, category_id, enabled)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, category_id) DO UPDATE SET enabled = EXCLUDED.enabled
+            """,
+            user_id, category_id, enabled,
+        )
 
 
 # Алиас для обратной совместимости (используется в старом коде).

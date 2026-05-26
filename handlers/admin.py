@@ -3,6 +3,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from config import category_label, CATEGORIES
 from db.connection import get_pool, is_pgvector_available
 from db import repository as repo
 from handlers.common import owner_only, safe_send
@@ -64,6 +65,25 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         lines.append("pgvector: <b>выключен</b> — семантика недоступна")
     lines.append(f"Записей в кеше Gemini: <b>{n_cache}</b>")
+    # Категории за последние сутки
+    try:
+        cat_counts = await repo.get_category_counts_last_hours(24)
+        no_cat_total = await repo.count_posts_without_category(fresh_days=2)
+    except Exception:
+        cat_counts, no_cat_total = {}, 0
+    if cat_counts or no_cat_total:
+        lines.append("")
+        lines.append("<b>Категории за 24ч:</b>")
+        for cid, _lbl in CATEGORIES:
+            n = cat_counts.get(cid, 0)
+            if n:
+                lines.append(f"• {category_label(cid)} — {n}")
+        unknown = cat_counts.get("unknown", 0)
+        if unknown:
+            lines.append(f"• <i>без категории</i> — {unknown}")
+        if no_cat_total:
+            lines.append(f"<i>В очереди на классификацию (свежих): {no_cat_total}</i>")
+
     lines.append("")
     lines.append("<b>По каналам:</b>")
     for r in per_channel:

@@ -28,10 +28,13 @@ async def _send_to_owner(bot: Bot, owner_chat_id: int, text: str) -> None:
 
 
 async def push_digest(bot: Bot, owner_chat_id: int, hours: int, label: str) -> None:
-    """Один проход: построить дайджест и запушить владельцу. label идёт в заголовок."""
-    log.info(f"Автодайджест [{label}]: hours={hours}")
+    """Один проход: построить дайджест и запушить владельцу. label идёт в заголовок.
+    Учитывает disabled-категории владельца — они исключаются из выдачи."""
+    from db import repository as repo
+    disabled = list(await repo.get_disabled_categories(owner_chat_id))
+    log.info(f"Автодайджест [{label}]: hours={hours}, исключены категории: {disabled or '—'}")
     try:
-        text, n_posts = await compose_digest(hours)
+        text, n_posts = await compose_digest(hours, exclude_categories=disabled or None)
     except Exception as e:
         log.exception(f"Автодайджест [{label}] упал: {e}")
         try:

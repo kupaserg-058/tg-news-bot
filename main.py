@@ -19,6 +19,7 @@ from parser.scheduler_jobs import parse_all_channels_job
 from jobs.auto_digest import push_digest
 from jobs.cache_purge import purge_cache_job
 from jobs.embed_recent import embed_recent_job
+from jobs.classify_recent import classify_recent_job
 from ai.key_rotator import init_rotator
 
 from handlers.common import set_owner_chat_id, on_error
@@ -143,6 +144,11 @@ async def amain() -> None:
         embed_recent_job,
         trigger=IntervalTrigger(minutes=10),
         id="embed_recent",
+    )
+    scheduler.add_job(
+        classify_recent_job,
+        trigger=IntervalTrigger(minutes=10),
+        id="classify_recent",
     )
 
     application = build_application(env["TELEGRAM_BOT_TOKEN"])

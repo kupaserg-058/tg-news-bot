@@ -49,9 +49,18 @@ def _select_top_posts(posts: list[dict], expert_links: dict[int, list[dict]], ta
     return [posts[i] for i in chosen]
 
 
-async def compose_digest(hours: int = 24) -> tuple[str | None, int]:
-    """Возвращает (html_text, n_posts_total_in_window). None если за окно ничего нет."""
-    posts = await repo.get_posts_last_hours(hours, limit=500, with_embeddings=True)
+async def compose_digest(
+    hours: int = 24,
+    category: str | None = None,
+    exclude_categories: list[str] | None = None,
+) -> tuple[str | None, int]:
+    """Возвращает (html_text, n_posts_total_in_window). None если за окно ничего нет.
+    category — фильтр по конкретной категории (приоритетнее exclude_categories).
+    exclude_categories — список disabled категорий пользователя (для автодайджеста)."""
+    posts = await repo.get_posts_last_hours(
+        hours, limit=500, with_embeddings=True,
+        category=category, exclude_categories=exclude_categories,
+    )
     if not posts:
         return None, 0
 

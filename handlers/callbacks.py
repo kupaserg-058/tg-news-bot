@@ -43,9 +43,16 @@ def _extract_digest_topics(text: str) -> list[str]:
 @owner_only_callback
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cq = update.callback_query
-    await cq.answer()
     data = cq.data or ""
     log.info(f"callback: {data}")
+
+    # Настройки категорий (свой обработчик, сам зовёт cq.answer)
+    if data.startswith("cat:"):
+        from handlers.categories_settings import on_categories_callback
+        await on_categories_callback(update, context)
+        return
+
+    await cq.answer()
 
     # Быстрый интервал дайджеста.
     if data.startswith("d"):

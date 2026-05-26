@@ -9,13 +9,22 @@ import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes
 
+from config import CATEGORIES
+
 
 # --- Главное меню (ReplyKeyboard) ---
 
 MENU = {
-    # без аргументов — мгновенное действие
+    # быстрые дайджесты (без выбора категории)
     "📅 Дайджест 24ч":   {"kind": "instant", "action": "digest", "hours": 24},
     "📅 Дайджест 6ч":    {"kind": "instant", "action": "digest", "hours": 6},
+
+    # двухшаговый: выбираем категорию → потом период
+    "🗂 По категории":   {"kind": "open_categories"},
+
+    # настройки
+    "⚙ Категории":      {"kind": "open_category_settings"},
+
     "📋 Каналы":          {"kind": "instant", "action": "list_channels"},
     "📊 Статистика":      {"kind": "instant", "action": "stats"},
 
@@ -25,7 +34,18 @@ MENU = {
     "🕸 Граф связей":          {"kind": "ask_topic", "action": "map",       "prompt": "По какой теме построить граф?"},
     "🔎 Поиск по базе":        {"kind": "ask_topic", "action": "search",    "prompt": "Что искать в базе (ключевые слова)?"},
 
+    "⬅️ Назад":          {"kind": "back"},
     "❌ Отмена":               {"kind": "cancel"},
+}
+
+
+# Метки кнопок-периодов (в режиме «выбор периода после категории»)
+PERIOD_LABELS = {
+    "⏱ 6ч":  6,
+    "⏱ 12ч": 12,
+    "⏱ 24ч": 24,
+    "⏱ 3д":  72,
+    "⏱ 7д":  168,
 }
 
 
@@ -33,9 +53,10 @@ def make_main_menu() -> ReplyKeyboardMarkup:
     """Основная клавиатура. Висит над полем ввода всегда после /start."""
     layout = [
         ["📅 Дайджест 24ч",  "📅 Дайджест 6ч"],
-        ["📌 Глубокий анализ", "📜 Хроника"],
-        ["🕸 Граф связей",     "🔎 Поиск по базе"],
-        ["📋 Каналы",          "📊 Статистика"],
+        ["🗂 По категории",   "📌 Глубокий анализ"],
+        ["📜 Хроника",        "🕸 Граф связей"],
+        ["🔎 Поиск по базе",  "⚙ Категории"],
+        ["📋 Каналы",         "📊 Статистика"],
     ]
     return ReplyKeyboardMarkup(
         [[KeyboardButton(label) for label in row] for row in layout],
@@ -48,6 +69,32 @@ def make_cancel_menu() -> ReplyKeyboardMarkup:
     """Клавиатура в режиме ожидания темы — только Отмена."""
     return ReplyKeyboardMarkup(
         [[KeyboardButton("❌ Отмена")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def make_categories_menu() -> ReplyKeyboardMarkup:
+    """Клавиатура категорий для шага 1 двухшагового дайджеста."""
+    # 9 категорий в 3 ряда по 3, плюс ряд с «Назад»
+    labels = [lbl for _, lbl in CATEGORIES]
+    rows = [labels[i:i + 3] for i in range(0, len(labels), 3)]
+    rows.append(["⬅️ Назад"])
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(x) for x in row] for row in rows],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def make_period_menu() -> ReplyKeyboardMarkup:
+    """Клавиатура выбора периода для шага 2."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("⏱ 6ч"), KeyboardButton("⏱ 12ч"), KeyboardButton("⏱ 24ч")],
+            [KeyboardButton("⏱ 3д"), KeyboardButton("⏱ 7д")],
+            [KeyboardButton("⬅️ Назад"), KeyboardButton("❌ Отмена")],
+        ],
         resize_keyboard=True,
         is_persistent=True,
     )

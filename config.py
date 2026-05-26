@@ -33,6 +33,32 @@ TOPIC_MAX_LEN = 500          # лимит на длину /why, /context, /map, 
 
 TIMEZONE = "Europe/Moscow"
 
+# --- Категории постов ---
+# (id, label с эмодзи). id хранится в БД, label — для UI.
+CATEGORIES: list[tuple[str, str]] = [
+    ("politics", "🏛 Политика"),
+    ("economy",  "💸 Экономика"),
+    ("it",       "💻 IT и технологии"),
+    ("conflict", "⚔️ Конфликты"),
+    ("society",  "👥 Общество"),
+    ("culture",  "🎭 Культура"),
+    ("sport",    "⚽ Спорт"),
+    ("science",  "🔬 Наука"),
+    ("other",    "📦 Другое"),
+]
+CATEGORY_IDS: set[str] = {cid for cid, _ in CATEGORIES}
+
+
+def category_label(cid: str) -> str:
+    for c, lbl in CATEGORIES:
+        if c == cid:
+            return lbl
+    return cid
+
+
+CLASSIFY_BATCH_SIZE = 25         # сколько постов классифицируем одним запросом к Gemini
+CLASSIFY_FRESH_DAYS = 2           # классифицируем посты не старше N суток
+
 # --- Embeddings ---
 EMBEDDING_MODEL = "gemini-embedding-001"  # бесплатный tier; усекаем вывод до 768d через MRL
 EMBEDDING_DIM = 768                        # HNSW в pgvector ограничен 2000 — берём 768 (стандарт)
