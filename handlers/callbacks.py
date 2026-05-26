@@ -17,6 +17,7 @@ from db import repository as repo
 from formatters.buttons import get_topic, topic_actions, digest_actions
 from formatters.duration import format_hours
 from formatters.utils import escape_html
+from handlers.chat_history import get_recent_exchanges, add_exchange
 from handlers.common import safe_send_with_buttons, send_long, owner_only_callback, QUOTA_HINT
 from handlers.map_graph import _extract_d2, _send_map
 from utils.logger import log
@@ -163,7 +164,8 @@ async def _do_more(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: st
         "Нужны детали, контекст, предыстория, реакции сторон, последствия. "
         "Найди дополнительные источники в интернете помимо моей базы постов."
     )
-    prompt = build_free_prompt(deepen_question, posts)
+    history = get_recent_exchanges(context)
+    prompt = build_free_prompt(deepen_question, posts, history=history)
     try:
         text = await gemini_client.generate(prompt, query_type="free", use_search=True, use_cache=False)
     except GeminiQuotaError:
@@ -172,4 +174,5 @@ async def _do_more(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: st
     except Exception as e:
         await chat.send_message(f"❌ {type(e).__name__}: {e}")
         return
+    add_exchange(context, f"углубить: {topic}", text)
     await send_long(chat, text, reply_markup=topic_actions(context, topic, exclude="more"))

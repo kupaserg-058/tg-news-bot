@@ -215,13 +215,27 @@ def build_chronicle_prompt(topic: str, posts: list[dict]) -> str:
 
 # ---------- свободный текст ----------
 
-def build_free_prompt(question: str, posts: list[dict]) -> str:
+def _format_chat_history(history: list[dict] | None) -> str:
+    """Контекст последнего разговора для подмешивания в промпт."""
+    if not history:
+        return ""
+    lines = ["<КОНТЕКСТ ПРЕДЫДУЩЕГО РАЗГОВОРА — это то что я (Марк) уже отвечал недавно. Используй для связности, не повторяй то что уже сказал.>"]
+    for i, e in enumerate(history, 1):
+        lines.append(f'[{i}] Друг спросил: «{e["q"]}»')
+        lines.append(f'    Я (Марк) ответил: {e["a"]}')
+    lines.append("</КОНТЕКСТ>")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_free_prompt(question: str, posts: list[dict], history: list[dict] | None = None) -> str:
     posts_block = _format_posts_block(posts, max_chars_per_post=500)
+    history_block = _format_chat_history(history)
     return f"""{MARK_PERSONA}
 
 {TELEGRAM_HTML_RULES}
 
-Сейчас {_now()}. Друг спрашивает: «{question}». Структура (HTML: <b>, <i>, <a href="...">; никакого markdown):
+{history_block}Сейчас {_now()}. Друг спрашивает: «{question}». Структура (HTML: <b>, <i>, <a href="...">; никакого markdown):
 
 <b>📰 Факты</b>
 Что известно по теме из базы постов и Google Search. С inline-ссылками: на посты — <a href=\"link\">@канал</a>, на сетевые источники — <a href=\"url\">название</a>.
@@ -239,7 +253,10 @@ def build_free_prompt(question: str, posts: list[dict]) -> str:
 - Никаких преамбул, сразу к делу.
 - Каждый факт — со ссылкой.
 - В базе пусто — открыто говорю: «В моей базе по этому пусто, отвечаю по Google Search».
-- В самом конце отдельной строкой подсказка: <i>Можем углубиться: 📌 Глубже · 🪞 Параллели · 🕸 Граф связей — кнопки ниже.</i>
+- Если выше есть КОНТЕКСТ — рассматривай новый вопрос как продолжение разговора:
+  не повторяй то что уже говорил, ссылайся на сказанное («как я выше упоминал…»),
+  углубляйся туда куда друг ведёт. Если вопрос явно сменил тему — спокойно переключайся.
+- В самом конце отдельной строкой подсказка: <i>Можем углубиться: 📌 Глубже · 📜 Хроника · 🕸 Граф связей — кнопки ниже.</i>
 
 Посты из базы по теме:
 

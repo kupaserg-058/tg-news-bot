@@ -10,6 +10,7 @@ from config import MAX_POSTS_IN_PROMPT
 from db import repository as repo
 from formatters.buttons import topic_actions
 from formatters.utils import escape_html
+from handlers.chat_history import get_recent_exchanges, add_exchange
 from handlers.common import owner_only, safe_send, safe_send_with_buttons, clamp_topic, QUOTA_HINT
 
 
@@ -24,8 +25,10 @@ async def free_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await repo.log_query(update.effective_user.id, "free_text", question)
     posts = await repo.search_posts(question, limit=MAX_POSTS_IN_PROMPT)
 
-    await safe_send(update, f"🔎 Запрос «{escape_html(question)}»: {len(posts)} постов в базе. Думаю...")
-    prompt = build_free_prompt(question, posts)
+    history = get_recent_exchanges(context)
+    note = " <i>(помню наш разговор)</i>" if history else ""
+    await safe_send(update, f"🔎 Запрос «{escape_html(question)}»: {len(posts)} постов в базе.{note} Думаю...")
+    prompt = build_free_prompt(question, posts, history=history)
     try:
         text = await gemini_client.generate(prompt, query_type="free", use_search=True)
     except GeminiQuotaError:
@@ -35,4 +38,5 @@ async def free_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await safe_send(update, f"❌ Gemini не ответил: <code>{escape_html(type(e).__name__)}: {escape_html(str(e))}</code>")
         return
 
+    add_exchange(context, question, text)
     await safe_send_with_buttons(update, text, reply_markup=topic_actions(context, question))
