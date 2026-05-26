@@ -59,6 +59,11 @@ def category_label(cid: str) -> str:
 CLASSIFY_BATCH_SIZE = 25         # сколько постов классифицируем одним запросом к Gemini
 CLASSIFY_FRESH_DAYS = 2           # классифицируем посты не старше N суток
 
+# --- Граф связей (D2 через Kroki.io) ---
+# Список тем: https://d2lang.com/tour/themes/  (0,1,100..105,200,300,301)
+D2_THEME = 0                      # 0 = аккуратный neutral по умолчанию
+D2_SKETCH = False                  # True = «рисованный от руки» стиль
+
 # --- Embeddings ---
 EMBEDDING_MODEL = "gemini-embedding-001"  # бесплатный tier; усекаем вывод до 768d через MRL
 EMBEDDING_DIM = 768                        # HNSW в pgvector ограничен 2000 — берём 768 (стандарт)

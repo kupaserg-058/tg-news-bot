@@ -1,5 +1,5 @@
-"""/map тема — граф связей в Mermaid. Сначала пробуем PNG через mermaid.ink,
-при ошибке шлём текстовый блок для вставки в mermaid.live."""
+"""/map тема — граф связей в D2, рендер PNG через Kroki.io.
+При неудаче (Kroki недоступен) — текстовый блок как fallback."""
 
 import re
 from io import BytesIO
@@ -14,31 +14,30 @@ from ai.prompts import build_map_prompt
 from config import MAX_POSTS_IN_PROMPT
 from db import repository as repo
 from formatters.buttons import topic_actions
-from formatters.mermaid_image import render_to_png
+from formatters.diagram_image import render_d2_to_png
 from formatters.utils import escape_html
 from handlers.common import owner_only, safe_send, clamp_topic, QUOTA_HINT
 
 
-_MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+# ```d2 ...``` блок. Допускаем и без языка-тега.
+_D2_BLOCK_RE = re.compile(r"```(?:d2)?\s*\n?(.*?)```", re.DOTALL | re.IGNORECASE)
 
 
-def _extract_mermaid(text: str) -> str:
-    m = _MERMAID_BLOCK_RE.search(text)
+def _extract_d2(text: str) -> str:
+    m = _D2_BLOCK_RE.search(text)
     if m:
         return m.group(1).strip()
     return text.strip()
 
 
-_MAP_LEGEND = (
-    "🟢 поддерживает · 🔴 против · ⚪ нейтрально · 🟡 противоречиво"
-)
+_MAP_LEGEND = "🟢 поддерживает · 🔴 против · ⚪ нейтрально · 🟡 противоречиво"
 
 
-async def _send_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str, mermaid: str) -> None:
+async def _send_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str, source: str) -> None:
     chat = update.effective_chat
     markup = topic_actions(context, topic, exclude="map")
 
-    png = await render_to_png(mermaid)
+    png = await render_d2_to_png(source)
     if png:
         bio = BytesIO(png)
         bio.name = "map.png"
@@ -50,12 +49,11 @@ async def _send_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: s
         )
         return
 
-    # fallback: текстовый блок
+    # Fallback: текстовый блок
     header = (
-        f"🕸 <b>Граф: {escape_html(topic)}</b> <i>(не удалось отрисовать PNG, картинку построишь сам)</i>\n"
-        f'Скопируй блок ниже и вставь на <a href="https://mermaid.live">mermaid.live</a>\n\n'
+        f"🕸 <b>Граф: {escape_html(topic)}</b> <i>(Kroki не отрисовал, вставь на <a href=\"https://play.d2lang.com\">d2lang.com/play</a>)</i>\n\n"
     )
-    block = f"<pre>{escape_html(mermaid)}</pre>"
+    block = f"<pre>{escape_html(source)}</pre>"
     await chat.send_message(
         header + block,
         parse_mode=ParseMode.HTML,
@@ -87,5 +85,5 @@ async def map_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await safe_send(update, f"❌ Gemini не ответил: <code>{escape_html(type(e).__name__)}: {escape_html(str(e))}</code>")
         return
 
-    mermaid = _extract_mermaid(text)
-    await _send_map(update, context, topic, mermaid)
+    source = _extract_d2(text)
+    await _send_map(update, context, topic, source)
