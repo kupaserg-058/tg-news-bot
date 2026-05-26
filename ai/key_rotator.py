@@ -14,7 +14,8 @@ from typing import Optional
 from utils.logger import log
 
 
-COOLDOWN_SECONDS = 60  # сколько ждать прежде чем снова попробовать ключ после 429
+COOLDOWN_SECONDS = 60         # после 429 (минутный лимит)
+BROKEN_COOLDOWN_SECONDS = 24 * 3600  # после 400/403 (ключ невалиден / нет прав) — сутки
 
 
 class KeyRotator:
@@ -55,12 +56,33 @@ class KeyRotator:
         idx = self._keys.index(key)
         log.warning(f"KeyRotator: ключ #{idx + 1} исчерпан, cooldown {COOLDOWN_SECONDS}с")
 
+    def mark_key_broken(self, key: str, reason: str = "") -> None:
+        """Помечает ключ как невалидный (400/403). Ставит длинный cooldown."""
+        if key not in self._cooldowns:
+            return
+        self._cooldowns[key] = time.time() + BROKEN_COOLDOWN_SECONDS
+        idx = self._keys.index(key)
+        log.error(f"KeyRotator: ключ #{idx + 1} битый ({reason}), cooldown 24ч")
+
     def all_exhausted(self) -> bool:
         now = time.time()
         return all(self._cooldowns[k] > now for k in self._keys)
 
     def count(self) -> int:
         return len(self._keys)
+
+    def status(self) -> list[dict]:
+        """Для диагностики: [{idx, key_preview, cooldown_remaining_s}, ...]"""
+        now = time.time()
+        out = []
+        for i, k in enumerate(self._keys, 1):
+            remain = max(0, int(self._cooldowns[k] - now))
+            out.append({
+                "idx": i,
+                "preview": f"{k[:8]}…{k[-4:]}" if len(k) > 12 else k,
+                "cooldown_remaining": remain,
+            })
+        return out
 
 
 _rotator: Optional[KeyRotator] = None

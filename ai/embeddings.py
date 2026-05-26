@@ -95,7 +95,7 @@ async def _embed_single(
         "outputDimensionality": EMBEDDING_DIM,
     }
 
-    for attempt in range(2):
+    for attempt in range(rotator.count() + 1):
         key = rotator.current_key()
         url = f"{API_BASE}/models/{model}:embedContent?key={key}"
         resp = await client.post(url, json=payload)
@@ -105,8 +105,14 @@ async def _embed_single(
                 raise QuotaExceededError(
                     f"Gemini 429: все {rotator.count()} ключей исчерпаны. {resp.text[:200]}"
                 )
-            # Ещё один заход на следующем ключе
             continue
+        if resp.status_code in (400, 403):
+            body = resp.text
+            if "API_KEY_INVALID" in body or "API key not valid" in body or "PERMISSION_DENIED" in body:
+                rotator.mark_key_broken(key, f"HTTP {resp.status_code}")
+                if rotator.all_exhausted():
+                    raise QuotaExceededError(f"Все ключи нерабочие: {body[:200]}")
+                continue
         if resp.status_code != 200:
             log.warning(f"embed [{model}] HTTP {resp.status_code}: {resp.text[:200]}")
             return None

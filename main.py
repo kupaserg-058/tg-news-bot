@@ -31,7 +31,7 @@ from handlers.why import why
 from handlers.context_cmd import context_cmd, chronicle_cmd
 from handlers.map_graph import map_cmd
 from handlers.menu import text_router
-from handlers.admin import clear_cache, stats
+from handlers.admin import clear_cache, stats, test_keys
 from handlers.callbacks import on_callback
 
 
@@ -72,6 +72,7 @@ def build_application(token: str) -> Application:
 
     app.add_handler(CommandHandler("clear_cache", clear_cache))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("test_keys", test_keys))
 
     app.add_handler(CallbackQueryHandler(on_callback))
 

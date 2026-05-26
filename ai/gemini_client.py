@@ -24,10 +24,22 @@ class GeminiQuotaError(Exception):
 
 def _is_quota_error(e: Exception) -> bool:
     if isinstance(e, ClientError):
-        # google-genai 0.3.0 кладёт код в args/message
         msg = str(e)
         return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower()
     return False
+
+
+def _is_auth_error(e: Exception) -> tuple[bool, str]:
+    """400 INVALID_ARGUMENT (API key not valid) или 403 — ключ битый. Возвращает (is_auth, reason)."""
+    if isinstance(e, ClientError):
+        msg = str(e)
+        if "API_KEY_INVALID" in msg or "API key not valid" in msg:
+            return True, "API_KEY_INVALID"
+        if "PERMISSION_DENIED" in msg or " 403 " in msg:
+            return True, "PERMISSION_DENIED"
+        if "INVALID_ARGUMENT" in msg and "key" in msg.lower():
+            return True, "INVALID_ARGUMENT(key)"
+    return False, ""
 
 
 _clients: dict[str, genai.Client] = {}  # key → client (кешируем чтобы не пересоздавать)
@@ -112,7 +124,13 @@ async def _call_model(prompt: str, model: str, use_search: bool) -> str:
                 rotator.mark_quota_exhausted(key)
                 if rotator.all_exhausted():
                     raise GeminiQuotaError(f"все {rotator.count()} ключей исчерпаны: {str(e)[:200]}") from e
-                continue  # пробуем следующий ключ
+                continue
+            is_auth, reason = _is_auth_error(e)
+            if is_auth:
+                rotator.mark_key_broken(key, reason)
+                if rotator.all_exhausted():
+                    raise GeminiQuotaError(f"все {rotator.count()} ключей нерабочие (последняя ошибка: {reason}): {str(e)[:200]}") from e
+                continue
             raise
 
         text = (response.text or "").strip()

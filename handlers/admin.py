@@ -3,6 +3,9 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
+import httpx
+
+from ai.key_rotator import get_rotator
 from config import category_label, CATEGORIES
 from db.connection import get_pool, is_pgvector_available
 from db import repository as repo
@@ -89,4 +92,44 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for r in per_channel:
         emb_label = f" · emb {r['n_with_emb']}/{r['n_total']}" if is_pgvector_available() and r["n_total"] else ""
         lines.append(f'• {escape_html(r["username"])} <i>({r["type"]})</i> — {r["n_total"]}{emb_label}')
+    await safe_send(update, "\n".join(lines))
+
+
+@owner_only
+async def test_keys(update, context) -> None:
+    """/test_keys — прогоняет каждый Gemini-ключ тестовым GET и показывает статус."""
+    rotator = get_rotator()
+    keys = rotator._keys  # доступ к приватному ОК, мы внутри проекта
+    await safe_send(update, f"🔑 Проверяю {len(keys)} ключ(ей)...")
+
+    lines = ["<b>🔑 Проверка ключей</b>", ""]
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for i, k in enumerate(keys, 1):
+            preview = f"{k[:8]}…{k[-4:]}" if len(k) > 12 else k
+            try:
+                resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={k}")
+                if resp.status_code == 200:
+                    n = len(resp.json().get("models", []))
+                    lines.append(f"✅ #{i} <code>{preview}</code> — рабочий, доступно моделей: {n}")
+                elif resp.status_code == 400 and "API_KEY_INVALID" in resp.text:
+                    lines.append(f"❌ #{i} <code>{preview}</code> — невалидный ключ")
+                elif resp.status_code == 403:
+                    lines.append(f"❌ #{i} <code>{preview}</code> — нет прав (Generative Language API не включён?)")
+                elif resp.status_code == 429:
+                    lines.append(f"⏸ #{i} <code>{preview}</code> — 429 (квота исчерпана прямо сейчас)")
+                else:
+                    lines.append(f"⚠️ #{i} <code>{preview}</code> — HTTP {resp.status_code}: {escape_html(resp.text[:150])}")
+            except Exception as e:
+                lines.append(f"⚠️ #{i} <code>{preview}</code> — сеть упала: {type(e).__name__}")
+
+    # Статус cooldown'ов
+    lines.append("")
+    lines.append("<b>Cooldown'ы:</b>")
+    for s in rotator.status():
+        if s["cooldown_remaining"] > 0:
+            mins = s["cooldown_remaining"] // 60
+            lines.append(f"• #{s['idx']} <code>{s['preview']}</code> — ждать ещё {mins} мин")
+        else:
+            lines.append(f"• #{s['idx']} <code>{s['preview']}</code> — готов")
+
     await safe_send(update, "\n".join(lines))
