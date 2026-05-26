@@ -265,18 +265,52 @@ async def search_posts_semantic(
 
 
 async def search_posts(query: str, limit: int = 50, days: int | None = None) -> list[dict]:
-    """Унифицированный вход: семантический поиск если доступен, иначе ts."""
+    """Гибридный поиск: semantic + ts → Reciprocal Rank Fusion.
+
+    1. Эмбеддит query, ищет top-2*limit семантически близких.
+    2. Параллельно полнотекстовый поиск через plainto_tsquery (морфология).
+    3. RRF-слияние: score = Σ 1/(60 + rank_i). Чем выше — тем релевантнее.
+    4. Если semantic недоступен (нет pgvector / embed упал) — возвращает чистый ts.
+    """
+    if not query.strip():
+        return []
+
+    fetch = max(limit * 2, 30)
+    semantic_results: list[dict] = []
+
     if is_pgvector_available():
         try:
             from ai.embeddings import embed_one
             qvec = await embed_one(query, task_type="RETRIEVAL_QUERY")
-            results = await search_posts_semantic(qvec, limit=limit, days=days)
-            if results:
-                return results
+            if qvec is not None:
+                semantic_results = await search_posts_semantic(qvec, limit=fetch, days=days)
         except Exception:
-            pass
-        # если эмбеддинг упал — fallback на ts
-    return await search_posts_ts(query, limit=limit, days=days)
+            semantic_results = []
+
+    ts_results = await search_posts_ts(query, limit=fetch, days=days)
+
+    if not semantic_results:
+        return ts_results[:limit]
+    if not ts_results:
+        return semantic_results[:limit]
+
+    # Reciprocal Rank Fusion
+    K = 60
+    scores: dict[int, float] = {}
+    posts_map: dict[int, dict] = {}
+
+    for rank, p in enumerate(semantic_results):
+        pid = p["id"]
+        scores[pid] = scores.get(pid, 0.0) + 1.0 / (K + rank)
+        posts_map.setdefault(pid, p)
+
+    for rank, p in enumerate(ts_results):
+        pid = p["id"]
+        scores[pid] = scores.get(pid, 0.0) + 1.0 / (K + rank)
+        posts_map.setdefault(pid, p)
+
+    sorted_ids = sorted(scores.keys(), key=lambda i: scores[i], reverse=True)
+    return [posts_map[pid] for pid in sorted_ids[:limit]]
 
 
 async def find_expert_links_for_post(post_id: int, limit: int = 3) -> list[dict]:

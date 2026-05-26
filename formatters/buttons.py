@@ -20,10 +20,10 @@ MENU = {
     "📊 Статистика":      {"kind": "instant", "action": "stats"},
 
     # требуют тему — переключают бота в "режим ожидания темы"
-    "📌 Глубокий анализ":      {"kind": "ask_topic", "action": "why",     "prompt": "Какую тему разобрать глубоко? Напиши одной строкой:"},
-    "🪞 Параллели":            {"kind": "ask_topic", "action": "context", "prompt": "По какой теме искать исторические параллели?"},
-    "🕸 Граф связей":          {"kind": "ask_topic", "action": "map",     "prompt": "По какой теме построить граф?"},
-    "🔎 Поиск по базе":        {"kind": "ask_topic", "action": "search",  "prompt": "Что искать в базе (ключевые слова)?"},
+    "📌 Глубокий анализ":      {"kind": "ask_topic", "action": "why",       "prompt": "Какую тему разобрать глубоко? Напиши одной строкой:"},
+    "📜 Хроника":              {"kind": "ask_topic", "action": "chronicle", "prompt": "По какой теме собрать хронику событий?"},
+    "🕸 Граф связей":          {"kind": "ask_topic", "action": "map",       "prompt": "По какой теме построить граф?"},
+    "🔎 Поиск по базе":        {"kind": "ask_topic", "action": "search",    "prompt": "Что искать в базе (ключевые слова)?"},
 
     "❌ Отмена":               {"kind": "cancel"},
 }
@@ -33,7 +33,7 @@ def make_main_menu() -> ReplyKeyboardMarkup:
     """Основная клавиатура. Висит над полем ввода всегда после /start."""
     layout = [
         ["📅 Дайджест 24ч",  "📅 Дайджест 6ч"],
-        ["📌 Глубокий анализ", "🪞 Параллели"],
+        ["📌 Глубокий анализ", "📜 Хроника"],
         ["🕸 Граф связей",     "🔎 Поиск по базе"],
         ["📋 Каналы",          "📊 Статистика"],
     ]
@@ -84,10 +84,10 @@ def topic_actions(context: ContextTypes.DEFAULT_TYPE, topic: str, exclude: str |
     """Кнопки под ответом на конкретную тему."""
     tid = _store_topic(context, topic)
     all_buttons = [
-        ("why",     "📌 Глубже"),
-        ("context", "🪞 Параллели"),
-        ("map",     "🕸 Граф"),
-        ("more",    "📚 Больше деталей"),
+        ("why",       "📌 Глубже"),
+        ("chronicle", "📜 Хроника"),
+        ("map",       "🕸 Граф"),
+        ("more",      "📚 Больше деталей"),
     ]
     row = [
         InlineKeyboardButton(label, callback_data=f"{action}|{tid}")

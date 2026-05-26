@@ -63,7 +63,11 @@ async def _dispatch_topic_action(action: str, topic: str, update: Update, contex
     if action == "why":
         from handlers.why import why
         await why(update, context)
+    elif action == "chronicle":
+        from handlers.context_cmd import chronicle_cmd
+        await chronicle_cmd(update, context)
     elif action == "context":
+        # backward-compat для старых callback'ов
         from handlers.context_cmd import context_cmd
         await context_cmd(update, context)
     elif action == "map":

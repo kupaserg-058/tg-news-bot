@@ -38,5 +38,5 @@ EMBEDDING_MODEL = "gemini-embedding-001"  # бесплатный tier; усек�
 EMBEDDING_DIM = 768                        # HNSW в pgvector ограничен 2000 — берём 768 (стандарт)
 EMBEDDING_CONCURRENCY = 6          # сколько embedContent-запросов в полёте одновременно
 EMBEDDING_INPUT_CHARS = 4000       # обрезка текста перед эмбеддингом
-SEMANTIC_SIMILARITY_THRESHOLD = 0.55  # минимальная похожесть для попадания в выдачу
+SEMANTIC_SIMILARITY_THRESHOLD = 0.65  # минимальная похожесть для попадания в выдачу (отсекает «общие» совпадения)
 EXPERT_LINK_THRESHOLD = 0.60       # для связи новость↔мнение эксперта

@@ -13,7 +13,11 @@
       "Bash(git add *)",
       "Bash(grep -i \".env$\")",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep -E \"\\\\.\\(py|sql\\)$\")",
+      "Bash(.venv/bin/python -c \"import main; print\\('OK main'\\)\")",
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, '.'\\); import main; print\\('SMOKE OK'\\)\")",
+      "Bash(PATH='/Users/korovsidit/Desktop/Telethon /.venv/bin:__TRACKED_VAR__' python3 -c 'import main; print\\('\\\\''SMOKE OK'\\\\''\\)')"
     ],
     "additionalDirectories": [
       "/Users/korovsidit/Desktop/Telethon ",

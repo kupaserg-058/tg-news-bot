@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 from ai import gemini_client
 from ai.digest_service import compose_digest
 from ai.gemini_client import GeminiQuotaError
-from ai.prompts import build_why_prompt, build_context_prompt, build_map_prompt, build_free_prompt
+from ai.prompts import build_why_prompt, build_context_prompt, build_chronicle_prompt, build_map_prompt, build_free_prompt
 from config import MAX_POSTS_IN_PROMPT
 from db import repository as repo
 from formatters.buttons import get_topic, topic_actions, digest_actions
@@ -65,8 +65,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         if action == "why":
             await _do_why(update, context, topic)
+        elif action == "chronicle":
+            await _do_chronicle(update, context, topic)
         elif action == "context":
-            await _do_context(update, context, topic)
+            # backward-compat: старые callback'ы
+            await _do_chronicle(update, context, topic)
         elif action == "map":
             await _do_map(update, context, topic)
         elif action == "more":
@@ -109,10 +112,11 @@ async def _do_why(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str
     await send_long(chat, text, reply_markup=topic_actions(context, topic, exclude="why"))
 
 
-async def _do_context(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str) -> None:
+async def _do_chronicle(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str) -> None:
     chat = update.effective_chat
-    await chat.send_message(f"🪞 Параллели по «{escape_html(topic)}»...")
-    prompt = build_context_prompt(topic)
+    posts = await repo.search_posts(topic, limit=MAX_POSTS_IN_PROMPT)
+    await chat.send_message(f"📜 Собираю хронику «{escape_html(topic)}» из {len(posts)} постов...")
+    prompt = build_chronicle_prompt(topic, posts)
     try:
         text = await gemini_client.generate(prompt, query_type="context", use_search=True)
     except GeminiQuotaError:
@@ -121,7 +125,7 @@ async def _do_context(update: Update, context: ContextTypes.DEFAULT_TYPE, topic:
     except Exception as e:
         await chat.send_message(f"❌ {type(e).__name__}: {e}")
         return
-    await send_long(chat, text, reply_markup=topic_actions(context, topic, exclude="context"))
+    await send_long(chat, text, reply_markup=topic_actions(context, topic, exclude="chronicle"))
 
 
 async def _do_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str) -> None:

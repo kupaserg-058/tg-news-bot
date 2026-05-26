@@ -41,10 +41,9 @@ def _truncate(text: str) -> str:
 
 
 def _api_key() -> str:
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        raise RuntimeError("GEMINI_API_KEY не задан")
-    return key
+    """Берёт текущий активный ключ из ротатора."""
+    from ai.key_rotator import get_rotator
+    return get_rotator().current_key()
 
 
 def vector_to_pg(v: np.ndarray | list[float] | None) -> str | None:
@@ -85,24 +84,39 @@ def pg_to_vector(s) -> np.ndarray | None:
 async def _embed_single(
     client: httpx.AsyncClient, model: str, text: str, task_type: str
 ) -> Optional[np.ndarray]:
-    url = f"{API_BASE}/models/{model}:embedContent?key={_api_key()}"
+    """Один embedContent. При 429 — помечает ключ exhausted и пробует следующий (один retry)."""
+    from ai.key_rotator import get_rotator
+    rotator = get_rotator()
+
     payload = {
         "model": f"models/{model}",
         "content": {"parts": [{"text": text}]},
         "taskType": task_type,
         "outputDimensionality": EMBEDDING_DIM,
     }
-    resp = await client.post(url, json=payload)
-    if resp.status_code == 429:
-        raise QuotaExceededError(f"Gemini 429: {resp.text[:300]}")
-    if resp.status_code != 200:
-        log.warning(f"embed [{model}] HTTP {resp.status_code}: {resp.text[:200]}")
-        return None
-    data = resp.json()
-    values = data.get("embedding", {}).get("values", [])
-    if not values:
-        return None
-    return np.array(values, dtype=np.float32)
+
+    for attempt in range(2):
+        key = rotator.current_key()
+        url = f"{API_BASE}/models/{model}:embedContent?key={key}"
+        resp = await client.post(url, json=payload)
+        if resp.status_code == 429:
+            rotator.mark_quota_exhausted(key)
+            if rotator.all_exhausted():
+                raise QuotaExceededError(
+                    f"Gemini 429: все {rotator.count()} ключей исчерпаны. {resp.text[:200]}"
+                )
+            # Ещё один заход на следующем ключе
+            continue
+        if resp.status_code != 200:
+            log.warning(f"embed [{model}] HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        data = resp.json()
+        values = data.get("embedding", {}).get("values", [])
+        if not values:
+            return None
+        return np.array(values, dtype=np.float32)
+    # сюда дойдём только если оба захода словили 429 (но at least one key теперь exhausted)
+    raise QuotaExceededError(f"Gemini 429: после {2} попыток ключи продолжают возвращать 429")
 
 
 async def list_available_models() -> list[str]:

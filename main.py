@@ -19,6 +19,7 @@ from parser.scheduler_jobs import parse_all_channels_job
 from jobs.auto_digest import push_digest
 from jobs.cache_purge import purge_cache_job
 from jobs.embed_recent import embed_recent_job
+from ai.key_rotator import init_rotator
 
 from handlers.common import set_owner_chat_id, on_error
 from handlers.start import start, help_cmd, menu_cmd
@@ -26,7 +27,7 @@ from handlers.channels import add_channel, remove_channel, list_channels
 from handlers.digest import digest
 from handlers.search import search
 from handlers.why import why
-from handlers.context_cmd import context_cmd
+from handlers.context_cmd import context_cmd, chronicle_cmd
 from handlers.map_graph import map_cmd
 from handlers.menu import text_router
 from handlers.admin import clear_cache, stats
@@ -37,7 +38,7 @@ BOT_COMMANDS = [
     BotCommand("menu",           "Показать главное меню"),
     BotCommand("digest",         "AI-сводка по темам (опц. период: 6 / 12h / 3d)"),
     BotCommand("why",            "Глубокий разбор темы"),
-    BotCommand("context",        "Исторические параллели"),
+    BotCommand("chronicle",      "Хроника событий по теме"),
     BotCommand("map",            "Граф связей (Mermaid)"),
     BotCommand("search",         "Сырой поиск по базе"),
     BotCommand("add_channel",    "Добавить канал: @name news|expert"),
@@ -65,6 +66,7 @@ def build_application(token: str) -> Application:
 
     app.add_handler(CommandHandler("why", why))
     app.add_handler(CommandHandler("context", context_cmd))
+    app.add_handler(CommandHandler("chronicle", chronicle_cmd))
     app.add_handler(CommandHandler("map", map_cmd))
 
     app.add_handler(CommandHandler("clear_cache", clear_cache))
@@ -120,6 +122,7 @@ async def amain() -> None:
     log.info("=== Bot starting ===")
     env = load_env()
     set_owner_chat_id(env["OWNER_CHAT_ID"])
+    init_rotator(env["GEMINI_API_KEYS"])
 
     await init_pool(env["POSTGRES_URL"])
     await apply_schema()
