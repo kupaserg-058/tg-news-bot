@@ -29,6 +29,11 @@ def _extract_mermaid(text: str) -> str:
     return text.strip()
 
 
+_MAP_LEGEND = (
+    "🟢 поддерживает · 🔴 против · ⚪ нейтрально · 🟡 противоречиво"
+)
+
+
 async def _send_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str, mermaid: str) -> None:
     chat = update.effective_chat
     markup = topic_actions(context, topic, exclude="map")
@@ -39,7 +44,7 @@ async def _send_map(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: s
         bio.name = "map.png"
         await chat.send_photo(
             photo=InputFile(bio),
-            caption=f"🕸 <b>Граф: {escape_html(topic)}</b>",
+            caption=f"🕸 <b>Граф: {escape_html(topic)}</b>\n<i>{_MAP_LEGEND}</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=markup,
         )
