@@ -87,8 +87,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def _do_digest(update: Update, context: ContextTypes.DEFAULT_TYPE, hours: int) -> None:
     chat = update.effective_chat
     await chat.send_message(f"🤖 Группирую посты за {format_hours(hours)}...")
+    disabled = list(await repo.get_disabled_categories(update.effective_user.id))
     try:
-        text, n_posts = await compose_digest(hours)
+        text, n_posts = await compose_digest(hours, exclude_categories=disabled or None)
     except GeminiQuotaError:
         await chat.send_message(QUOTA_HINT)
         return

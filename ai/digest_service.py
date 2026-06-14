@@ -1,6 +1,8 @@
 """Сборка дайджеста. С embeddings — приоритизирует горячие сюжеты и связывает мнения экспертов
 с конкретными новостями. Без embeddings — fallback на простой список."""
 
+from datetime import datetime, timedelta, timezone
+
 from ai import gemini_client
 from ai.clustering import greedy_cluster, score_posts, cluster_sizes
 from ai.prompts import build_digest_prompt
@@ -10,14 +12,15 @@ from db.connection import is_pgvector_available
 from utils.logger import log
 
 
-async def _attach_expert_links(news_posts: list[dict]) -> dict[int, list[dict]]:
-    """Для каждой news возвращает связанные expert-посты (по embedding)."""
+async def _attach_expert_links(news_posts: list[dict], since: datetime) -> dict[int, list[dict]]:
+    """Для каждой news возвращает связанные expert-посты (по embedding),
+    не старше окна дайджеста (since), чтобы не подтягивать старые мнения."""
     if not is_pgvector_available():
         return {}
     out: dict[int, list[dict]] = {}
     for p in news_posts:
         try:
-            links = await repo.find_expert_links_for_post(p["id"], limit=3)
+            links = await repo.find_expert_links_for_post(p["id"], limit=3, since=since)
             if links:
                 out[p["id"]] = links
         except Exception as e:
@@ -66,7 +69,8 @@ async def compose_digest(
 
     total = len(posts)
     news_posts = [p for p in posts if p["channel_type"] == "news"]
-    expert_links = await _attach_expert_links(news_posts)
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    expert_links = await _attach_expert_links(news_posts, since)
 
     # Приоритизируем news по кластерам, мнения экспертов прикрепляем потом.
     if news_posts:

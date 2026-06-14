@@ -26,8 +26,9 @@ async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await repo.log_query(update.effective_user.id, "/digest", str(hours))
     await safe_send(update, f"🤖 Группирую посты за {format_hours(hours)} по темам...")
 
+    disabled = list(await repo.get_disabled_categories(update.effective_user.id))
     try:
-        text, n_posts = await compose_digest(hours)
+        text, n_posts = await compose_digest(hours, exclude_categories=disabled or None)
     except GeminiQuotaError:
         await safe_send(update, QUOTA_HINT)
         return

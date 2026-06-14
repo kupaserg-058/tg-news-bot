@@ -3,7 +3,7 @@
 from datetime import datetime
 import pytz
 
-from config import TIMEZONE
+from config import TIMEZONE, CATEGORIES, category_label
 
 
 _tz = pytz.timezone(TIMEZONE)
@@ -56,7 +56,8 @@ def _format_news_with_experts(news_posts: list[dict], expert_links: dict[int, li
         if len(text) > 400:
             text = text[:399] + "…"
         when = p["posted_at"].strftime("%d.%m %H:%M")
-        block = [f'[N{i}] {p["channel_username"]} ({when})\n{text}\nlink: {p["link"]}']
+        cat = category_label(p.get("category")) if p.get("category") else "—"
+        block = [f'[N{i}] {p["channel_username"]} ({when}, категория: {cat})\n{text}\nlink: {p["link"]}']
         for ep in expert_links.get(p["id"], []):
             etext = " ".join(ep["text"].split())
             if len(etext) > 250:
@@ -78,6 +79,7 @@ def build_digest_prompt(
 ) -> str:
     news_block = _format_news_with_experts(news_posts, expert_links)
     experts_extra = _format_posts_block(unlinked_experts, max_chars_per_post=300) if unlinked_experts else "(нет)"
+    category_list = "\n".join(f"- {lbl}" for _, lbl in CATEGORIES)
 
     return f"""{MARK_PERSONA}
 
@@ -86,8 +88,10 @@ def build_digest_prompt(
 Сейчас {_now()}. Сделай мне тематический дайджест за {hours} ч. В базе {total_posts} постов, ниже — приоритизированный набор.
 
 Правила:
-- Группируй сам по содержанию (Политика, Экономика, Конфликты, Технологии, Общество и т.п.). 3-7 групп.
-- Каждую группу начинай с эмодзи + <b>Название сферы</b>.
+- У каждого новостного поста указана категория — строго группируй посты по ней, используя ТОЛЬКО эти названия групп (ничего не придумывай, не объединяй и не переименовывай):
+{category_list}
+- Группу выводи только если в неё попал хотя бы один пост. Порядок групп — как в списке выше.
+- Каждую группу начинай ровно с её названия из списка (эмодзи+текст) как <b>Название сферы</b>.
 - Внутри группы — 2-5 тезисов в формате:
   • [Суть события одной строкой] — <a href="link">@канал</a> [ещё ссылки если есть]
 - Если у news-поста есть EXPERT-LINK (комментарий эксперта рядом) — добавь подстроку курсивом сразу после тезиса:

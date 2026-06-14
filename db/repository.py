@@ -408,11 +408,18 @@ async def search_posts(query: str, limit: int = 50, days: int | None = None) -> 
     return [posts_map[pid] for pid in sorted_ids[:limit]]
 
 
-async def find_expert_links_for_post(post_id: int, limit: int = 3) -> list[dict]:
-    """Для news-поста находит самые похожие expert-посты выше порога."""
+async def find_expert_links_for_post(post_id: int, limit: int = 3, since: datetime | None = None) -> list[dict]:
+    """Для news-поста находит самые похожие expert-посты выше порога.
+    since — нижняя граница posted_at для expert-постов (не подтягиваем старые мнения)."""
     if not is_pgvector_available():
         return []
     pool = get_pool()
+    params: list = [post_id, EXPERT_LINK_THRESHOLD]
+    where_since = ""
+    if since is not None:
+        params.append(since)
+        where_since = f"AND p.posted_at >= ${len(params)} "
+    params.append(limit)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT p.id, p.text, p.posted_at, p.link, "
@@ -423,9 +430,10 @@ async def find_expert_links_for_post(post_id: int, limit: int = 3) -> list[dict]
             "AND p.embedding IS NOT NULL "
             "AND p.id != $1 "
             "AND (1 - (p.embedding <=> (SELECT embedding FROM posts WHERE id = $1))) >= $2 "
+            f"{where_since}"
             "ORDER BY p.embedding <=> (SELECT embedding FROM posts WHERE id = $1) "
-            "LIMIT $3",
-            post_id, EXPERT_LINK_THRESHOLD, limit,
+            f"LIMIT ${len(params)}",
+            *params,
         )
     return [dict(r) for r in rows]
 
