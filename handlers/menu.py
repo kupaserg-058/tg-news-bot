@@ -17,6 +17,9 @@ from formatters.buttons import (
     MENU, PERIOD_LABELS,
     make_main_menu, make_cancel_menu, make_categories_menu, make_period_menu,
 )
+
+# Период без категории — тот же period_menu, состояние отдельное
+_DIGEST_PERIOD_STATE = "digest_period"
 from formatters.duration import format_hours
 from formatters.utils import escape_html
 from handlers.common import owner_only, safe_send
@@ -40,8 +43,9 @@ async def _do_digest(
     label = f" · {category_label(category)}" if category else ""
     await repo.log_query(update.effective_user.id, "menu:/digest", f"{hours}h{label}")
     await safe_send(update, f"🤖 Группирую посты за {format_hours(hours)}{label}...")
+    disabled = list(await repo.get_disabled_categories(update.effective_user.id)) if not category else []
     try:
-        text, n_posts = await compose_digest(hours, category=category)
+        text, n_posts = await compose_digest(hours, category=category, exclude_categories=disabled or None)
     except GeminiQuotaError:
         await safe_send(update, QUOTA_HINT)
         return
@@ -132,6 +136,17 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _dispatch_topic_action(awaiting, clamp_topic(text), update, context)
         return
 
+    # 2a) Выбор периода для обычного дайджеста (без категории)
+    if state == _DIGEST_PERIOD_STATE:
+        hours = PERIOD_LABELS.get(text)
+        if hours is None:
+            await update.effective_chat.send_message("Жми кнопку периода или ⬅️ Назад.", reply_markup=make_period_menu())
+            return
+        context.user_data.pop(STATE_KEY, None)
+        await update.effective_chat.send_message("Принял.", reply_markup=make_main_menu())
+        await _do_digest(update, context, hours=hours)
+        return
+
     # 2) Подменю выбора категории → ждём период
     if state == "categories":
         cat_id = _LABEL_TO_CAT.get(text)
@@ -174,6 +189,10 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if kind == "ask_topic":
             context.user_data[AWAITING_KEY] = menu_item["action"]
             await update.effective_chat.send_message(menu_item["prompt"], reply_markup=make_cancel_menu())
+            return
+        if kind == "open_digest_period":
+            context.user_data[STATE_KEY] = _DIGEST_PERIOD_STATE
+            await update.effective_chat.send_message("Выбери период дайджеста:", reply_markup=make_period_menu())
             return
         if kind == "open_categories":
             context.user_data[STATE_KEY] = "categories"
