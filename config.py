@@ -16,7 +16,6 @@ PARSER_INTERVAL_MIN = 15
 BACKFILL_DAYS = 1  # 24 часа при добавлении канала; дальше копится инкрементально каждые 15 мин
 
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_FALLBACK_MODEL = "gemini-2.0-flash"
 
 CACHE_TTL = {
     "digest": 3600,

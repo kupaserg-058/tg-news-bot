@@ -13,7 +13,9 @@ from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
 
-from config import GEMINI_MODEL, GEMINI_FALLBACK_MODEL
+import asyncio
+
+from config import GEMINI_MODEL
 from ai import cache
 from utils.logger import log
 
@@ -105,11 +107,28 @@ def _format_with_sources(text: str, sources: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _is_server_error(e: Exception) -> bool:
+    """503/502/500 — временная перегрузка серверов Google, не проблема ключа."""
+    if isinstance(e, ClientError):
+        msg = str(e)
+        return "503" in msg or "502" in msg or "500" in msg or "UNAVAILABLE" in msg
+    return False
+
+
+_SERVER_ERROR_RETRY_DELAY_S = 10   # пауза перед повтором при 503
+_SERVER_ERROR_MAX_RETRIES = 3      # максимум повторов при 503
+
+
 async def _call_model(prompt: str, model: str, use_search: bool) -> str:
-    """Вызывает модель. При 429 — помечает ключ exhausted и пробует следующий."""
+    """Вызывает модель.
+    - При 429 — помечает ключ exhausted, переключается на следующий.
+    - При 503/502 — ждёт и повторяет на той же модели (до _SERVER_ERROR_MAX_RETRIES раз).
+    """
     from ai.key_rotator import get_rotator
     rotator = get_rotator()
     config = _build_config(use_search)
+
+    server_error_retries = 0
 
     for attempt in range(rotator.count() + 1):
         client, key = _get_client()
@@ -129,8 +148,14 @@ async def _call_model(prompt: str, model: str, use_search: bool) -> str:
             if is_auth:
                 rotator.mark_key_broken(key, reason)
                 if rotator.all_exhausted():
-                    raise GeminiQuotaError(f"все {rotator.count()} ключей нерабочие (последняя ошибка: {reason}): {str(e)[:200]}") from e
+                    raise GeminiQuotaError(f"все {rotator.count()} ключей нерабочие ({reason}): {str(e)[:200]}") from e
                 continue
+            if _is_server_error(e):
+                server_error_retries += 1
+                if server_error_retries <= _SERVER_ERROR_MAX_RETRIES:
+                    log.warning(f"Gemini {model} 503/UNAVAILABLE (попытка {server_error_retries}/{_SERVER_ERROR_MAX_RETRIES}), повтор через {_SERVER_ERROR_RETRY_DELAY_S}с")
+                    await asyncio.sleep(_SERVER_ERROR_RETRY_DELAY_S)
+                    continue
             raise
 
         text = (response.text or "").strip()
@@ -151,25 +176,14 @@ async def generate(
     use_cache: bool = True,
 ) -> str:
     """Главная точка входа. query_type — один из ключей CACHE_TTL: digest, search, why, context, map, free."""
-    primary = GEMINI_MODEL
-
     if use_cache:
-        cached = await cache.get(prompt, primary, use_search)
+        cached = await cache.get(prompt, GEMINI_MODEL, use_search)
         if cached is not None:
             return cached
 
-    try:
-        text = await _call_model(prompt, primary, use_search)
-        model_used = primary
-    except GeminiQuotaError:
-        # Ключи исчерпаны на основной модели — fallback тоже не спасёт, пробрасываем
-        raise
-    except Exception as e:
-        log.warning(f"Gemini {primary} упал ({type(e).__name__}: {e}). Пробую fallback {GEMINI_FALLBACK_MODEL}")
-        text = await _call_model(prompt, GEMINI_FALLBACK_MODEL, use_search)
-        model_used = GEMINI_FALLBACK_MODEL
+    text = await _call_model(prompt, GEMINI_MODEL, use_search)
 
     if use_cache:
-        await cache.put(prompt, model_used, use_search, text, query_type)
+        await cache.put(prompt, GEMINI_MODEL, use_search, text, query_type)
 
     return text
