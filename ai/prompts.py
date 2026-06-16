@@ -46,8 +46,7 @@ def _format_posts_block(posts: list[dict], max_chars_per_post: int = 400) -> str
 
 # ---------- /digest по темам ----------
 
-def _format_news_with_experts(news_posts: list[dict], expert_links: dict[int, list[dict]]) -> str:
-    """Формат: каждая news + (опционально) привязанные мнения экспертов."""
+def _format_news_block(news_posts: list[dict]) -> str:
     if not news_posts:
         return "(новостных постов нет)"
     out = []
@@ -57,28 +56,31 @@ def _format_news_with_experts(news_posts: list[dict], expert_links: dict[int, li
             text = text[:399] + "…"
         when = p["posted_at"].strftime("%d.%m %H:%M")
         cat = category_label(p.get("category")) if p.get("category") else "—"
-        block = [f'[N{i}] {p["channel_username"]} ({when}, категория: {cat})\n{text}\nlink: {p["link"]}']
-        for ep in expert_links.get(p["id"], []):
-            etext = " ".join(ep["text"].split())
-            if len(etext) > 250:
-                etext = etext[:249] + "…"
-            ewhen = ep["posted_at"].strftime("%d.%m %H:%M")
-            block.append(
-                f'  └─ EXPERT-LINK {ep["channel_username"]} ({ewhen}): {etext}\n     link: {ep["link"]}'
-            )
-        out.append("\n".join(block))
+        out.append(f'[N{i}] {p["channel_username"]} ({when}, категория: {cat})\n{text}\nlink: {p["link"]}')
+    return "\n\n".join(out)
+
+
+def _format_experts_block(expert_posts: list[dict]) -> str:
+    if not expert_posts:
+        return "(нет)"
+    out = []
+    for i, p in enumerate(expert_posts, 1):
+        text = " ".join(p["text"].split())
+        if len(text) > 300:
+            text = text[:299] + "…"
+        when = p["posted_at"].strftime("%d.%m %H:%M")
+        out.append(f'[E{i}] {p["channel_username"]} ({when})\n{text}\nlink: {p["link"]}')
     return "\n\n".join(out)
 
 
 def build_digest_prompt(
     news_posts: list[dict],
-    expert_links: dict[int, list[dict]],
-    unlinked_experts: list[dict],
+    expert_posts: list[dict],
     hours: int,
     total_posts: int,
 ) -> str:
-    news_block = _format_news_with_experts(news_posts, expert_links)
-    experts_extra = _format_posts_block(unlinked_experts, max_chars_per_post=300) if unlinked_experts else "(нет)"
+    news_block = _format_news_block(news_posts)
+    experts_block = _format_experts_block(expert_posts)
     category_list = "\n".join(f"- {lbl}" for _, lbl in CATEGORIES)
 
     return f"""{MARK_PERSONA}
@@ -87,26 +89,31 @@ def build_digest_prompt(
 
 Сейчас {_now()}. Сделай мне тематический дайджест за {hours} ч. В базе {total_posts} постов, ниже — приоритизированный набор.
 
-Правила:
-- У каждого новостного поста указана категория — строго группируй посты по ней, используя ТОЛЬКО эти названия групп (ничего не придумывай, не объединяй и не переименовывай):
+Правила для новостей:
+- У каждого поста указана категория — строго группируй по ней, используя ТОЛЬКО эти названия групп:
 {category_list}
-- Группу выводи только если в неё попал хотя бы один пост. Порядок групп — как в списке выше.
-- Каждую группу начинай ровно с её названия из списка (эмодзи+текст) как <b>Название сферы</b>.
-- Внутри группы — 2-5 тезисов в формате:
-  • [Суть события одной строкой] — <a href="link">@канал</a> [ещё ссылки если есть]
-- Если у news-поста есть EXPERT-LINK (комментарий эксперта рядом) — добавь подстроку курсивом сразу после тезиса:
-  <i>💬 <a href="link">@эксперт</a>: «короткий пересказ или цитата»</i>
-- В самом конце — блок «<b>💬 Общие мнения экспертов</b>» для эксперт-постов, не привязанных к новостям (раздел «unlinked experts»). 1-3 тезиса. Нет — пропусти.
-- HTML-разметка Telegram: <b>, <i>, <a href="...">. Никакого markdown.
-- В дайджесте — только факты. Никаких 🤖 блоков и личного мнения здесь.
+- Группу выводи только если в неё попал хотя бы один пост. Порядок — как в списке выше.
+- Каждую группу начинай с её названия как <b>Название сферы</b>.
+- Внутри группы — 2-5 тезисов:
+  • [Суть одной строкой] — <a href="link">@канал</a>
 
-NEWS (с привязанными мнениями экспертов под каждой, если есть):
+Правила для экспертов:
+- После всех новостных групп добавь единый блок <b>💬 Мнения экспертов</b>.
+- Внутри — 3-7 тезисов по наиболее важным высказываниям из раздела EXPERTS, без привязки к конкретным новостям:
+  • <i><a href="link">@эксперт</a>: «суть высказывания одной строкой»</i>
+- Если экспертов нет — блок пропусти.
+
+Общие правила:
+- HTML: только <b>, <i>, <a href="...">. Никакого markdown.
+- Только факты. Никакого личного мнения.
+
+NEWS:
 
 {news_block}
 
-UNLINKED EXPERTS (общие мнения без привязки к конкретной новости):
+EXPERTS:
 
-{experts_extra}
+{experts_block}
 """
 
 
