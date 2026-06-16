@@ -14,6 +14,20 @@ from formatters.utils import escape_html
 
 
 @owner_only
+async def test_digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/test_digest — запускает push_digest как будто пришло время автодайджеста."""
+    from jobs.auto_digest import push_digest
+    await safe_send(update, "⏳ Запускаю тестовый дайджест...")
+    await push_digest(
+        bot=context.bot,
+        owner_chat_id=update.effective_chat.id,
+        hours=12,
+        label="Тестовый дайджест",
+    )
+    await safe_send(update, "✅ Готово")
+
+
+@owner_only
 async def clear_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/clear_cache [тип] — чистит Gemini-кеш. Без аргумента — весь кеш. Тип: digest|search|why|context|map|free."""
     pool = get_pool()
