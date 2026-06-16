@@ -19,8 +19,8 @@ from formatters.utils import split_for_telegram, sanitize_telegram_html
 from utils.logger import log
 
 # При GeminiQuotaError — повторяем с паузой, максимум столько раз
-_QUOTA_RETRY_ATTEMPTS = 3
-_QUOTA_RETRY_DELAY_S = 30 * 60  # 30 минут между попытками
+_QUOTA_RETRY_ATTEMPTS = 4
+_QUOTA_RETRY_DELAY_S = 2 * 60  # 2 минуты — RPM cooldown ротатора 60с, берём с запасом
 
 
 async def _send_to_owner(bot: Bot, owner_chat_id: int, text: str) -> None:
@@ -39,6 +39,8 @@ async def push_digest(bot: Bot, owner_chat_id: int, hours: int, label: str) -> N
     Учитывает disabled-категории владельца — они исключаются из выдачи.
     При GeminiQuotaError повторяет до _QUOTA_RETRY_ATTEMPTS раз с паузой."""
     from db import repository as repo
+    # Небольшая задержка чтобы classify/embed тики, запущенные в ту же минуту, успели завершиться
+    await asyncio.sleep(90)
     disabled = list(await repo.get_disabled_categories(owner_chat_id))
     log.info(f"Автодайджест [{label}]: hours={hours}, исключены категории: {disabled or '—'}")
 
