@@ -13,14 +13,13 @@ from telegram import Bot
 from telegram.constants import ParseMode
 
 from ai.digest_service import compose_digest
-from ai.gemini_client import GeminiQuotaError
 from config import TELEGRAM_MESSAGE_LIMIT
 from formatters.utils import split_for_telegram, sanitize_telegram_html
 from utils.logger import log
 
-# При GeminiQuotaError — повторяем с паузой, максимум столько раз
-_QUOTA_RETRY_ATTEMPTS = 4
-_QUOTA_RETRY_DELAY_S = 2 * 60  # 2 минуты — RPM cooldown ротатора 60с, берём с запасом
+# При любой ошибке Gemini (429 или 503) — повторяем с паузой
+_RETRY_ATTEMPTS = 4
+_RETRY_DELAY_S = 5 * 60  # 5 минут — Google 503 обычно спадает за 2-5 мин
 
 
 async def _send_to_owner(bot: Bot, owner_chat_id: int, text: str) -> None:
@@ -46,37 +45,29 @@ async def push_digest(bot: Bot, owner_chat_id: int, hours: int, label: str) -> N
 
     text: str | None = None
     n_posts: int = 0
-    for attempt in range(1, _QUOTA_RETRY_ATTEMPTS + 1):
+    last_error: Exception | None = None
+    for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
             text, n_posts = await compose_digest(hours, exclude_categories=disabled or None)
             break
-        except GeminiQuotaError as e:
-            if attempt < _QUOTA_RETRY_ATTEMPTS:
+        except Exception as e:
+            last_error = e
+            if attempt < _RETRY_ATTEMPTS:
                 log.warning(
-                    f"Автодайджест [{label}]: квота исчерпана (попытка {attempt}/{_QUOTA_RETRY_ATTEMPTS}), "
-                    f"повтор через {_QUOTA_RETRY_DELAY_S // 60} мин"
+                    f"Автодайджест [{label}]: ошибка Gemini ({type(e).__name__}, попытка {attempt}/{_RETRY_ATTEMPTS}), "
+                    f"повтор через {_RETRY_DELAY_S // 60} мин"
                 )
-                await asyncio.sleep(_QUOTA_RETRY_DELAY_S)
+                await asyncio.sleep(_RETRY_DELAY_S)
             else:
-                log.error(f"Автодайджест [{label}]: все {_QUOTA_RETRY_ATTEMPTS} попытки исчерпаны: {e}")
+                log.error(f"Автодайджест [{label}]: все {_RETRY_ATTEMPTS} попытки провалились: {e}")
                 try:
                     await bot.send_message(
                         chat_id=owner_chat_id,
-                        text=f"⚠️ Автодайджест {label} не построился: квота Gemini исчерпана (попробовал {_QUOTA_RETRY_ATTEMPTS}×)",
+                        text=f"⚠️ Автодайджест {label} не построился после {_RETRY_ATTEMPTS} попыток: {type(e).__name__}",
                     )
                 except Exception:
                     pass
                 return
-        except Exception as e:
-            log.exception(f"Автодайджест [{label}] упал: {e}")
-            try:
-                await bot.send_message(
-                    chat_id=owner_chat_id,
-                    text=f"⚠️ Автодайджест {label} не построился: {type(e).__name__}",
-                )
-            except Exception:
-                pass
-            return
 
     if text is None:
         log.info(f"Автодайджест [{label}]: постов за {hours}ч нет, ничего не шлю")
