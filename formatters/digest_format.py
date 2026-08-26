@@ -1,12 +1,16 @@
 """Формат /digest и /search: только факты, без интерпретации."""
 
-from formatters.utils import escape_html, fmt_dt, truncate
+from formatters.utils import escape_html, fmt_post_age, truncate
 
 
 def _format_post_line(post: dict, with_time: bool = True) -> str:
-    """Одна строка: 🔴 канал (время) — текст → ссылка"""
+    """Одна строка: 🔴 канал (когда) — текст → ссылка.
+
+    Возраст показываем явно: в выдаче /search рядом стоят вчерашние и месячные
+    посты, и по одной «дд.мм» их не различить.
+    """
     username = escape_html(post["channel_username"])
-    when = fmt_dt(post["posted_at"], with_time=with_time)
+    when = fmt_post_age(post["posted_at"])
     text = escape_html(truncate(post["text"], 240))
     link = post["link"]
     return f'• <b>{username}</b> ({when}) — {text} <a href="{link}">→</a>'

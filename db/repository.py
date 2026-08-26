@@ -4,7 +4,12 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from config import SEMANTIC_SIMILARITY_THRESHOLD, EXPERT_LINK_THRESHOLD
+from config import (
+    SEMANTIC_SIMILARITY_THRESHOLD,
+    EXPERT_LINK_THRESHOLD,
+    RECENCY_BOOST,
+    RECENCY_HALFLIFE_DAYS,
+)
 from db.connection import get_pool, is_pgvector_available
 
 
@@ -345,6 +350,22 @@ async def search_posts_semantic(
     params.append(threshold)
     params.append(limit)
     # qvec приходит как text '[..]', cast в ::vector внутри SQL.
+    #
+    # ORDER BY — не чистое косинусное расстояние, а расстояние, делённое на множитель
+    # свежести. Порог отсечения при этом остаётся на СЫРОЙ похожести, чтобы свежесть
+    # не протаскивала нерелевантное.
+    #
+    # Почему именно здесь, а не переранжированием в Python: пул кандидатов формирует
+    # как раз этот LIMIT. В базе десятки тысяч старых постов с эмбеддингами против
+    # сотен свежих, поэтому при сортировке по чистому косинусу свежие посты просто
+    # не попадали в выдачу — переранжировать было уже нечего.
+    #
+    # Плата: выражение в ORDER BY не даёт использовать HNSW-индекс, идёт seq scan.
+    # На текущем корпусе (~15k векторов) это ~0.2-0.4 с — незаметно на фоне ответа Gemini.
+    recency = (
+        f"(1 + {RECENCY_BOOST} * power(0.5, "
+        f"EXTRACT(EPOCH FROM (now() - p.posted_at)) / 86400.0 / {RECENCY_HALFLIFE_DAYS}))"
+    )
     sql = (
         "SELECT p.id, p.text, p.posted_at, p.link, "
         "c.username AS channel_username, c.type AS channel_type, c.title AS channel_title, "
@@ -352,7 +373,7 @@ async def search_posts_semantic(
         "FROM posts p JOIN channels c ON c.id = p.channel_id "
         f"WHERE {' AND '.join(where)} "
         f"AND (1 - (p.embedding <=> $1::vector)) >= ${len(params) - 1} "
-        f"ORDER BY p.embedding <=> $1::vector LIMIT ${len(params)}"
+        f"ORDER BY (p.embedding <=> $1::vector) / {recency} LIMIT ${len(params)}"
     )
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)
@@ -365,7 +386,10 @@ async def search_posts(query: str, limit: int = 50, days: int | None = None) -> 
     1. Эмбеддит query, ищет top-2*limit семантически близких.
     2. Параллельно полнотекстовый поиск через plainto_tsquery (морфология).
     3. RRF-слияние: score = Σ 1/(60 + rank_i). Чем выше — тем релевантнее.
-    4. Если semantic недоступен (нет pgvector / embed упал) — возвращает чистый ts.
+    4. Свежесть учтена на уровне SQL: семантика сортируется по расстоянию с поправкой
+       на возраст, ts-выдача и так идёт от свежих к старым.
+    5. Если semantic недоступен (нет pgvector / embed упал) — работает на одном ts,
+       поправка на свежесть при этом всё равно применяется.
     """
     if not query.strip():
         return []
@@ -384,25 +408,22 @@ async def search_posts(query: str, limit: int = 50, days: int | None = None) -> 
 
     ts_results = await search_posts_ts(query, limit=fetch, days=days)
 
-    if not semantic_results:
-        return ts_results[:limit]
-    if not ts_results:
-        return semantic_results[:limit]
+    if not semantic_results and not ts_results:
+        return []
 
-    # Reciprocal Rank Fusion
+    # Reciprocal Rank Fusion. Единый путь даже когда доступен только один список:
+    # раньше на «только семантика» стоял ранний return, и такая выдача уходила
+    # мимо поправки на свежесть — как раз тот случай, когда всплывал старый пост,
+    # совпавший по смыслу.
     K = 60
     scores: dict[int, float] = {}
     posts_map: dict[int, dict] = {}
 
-    for rank, p in enumerate(semantic_results):
-        pid = p["id"]
-        scores[pid] = scores.get(pid, 0.0) + 1.0 / (K + rank)
-        posts_map.setdefault(pid, p)
-
-    for rank, p in enumerate(ts_results):
-        pid = p["id"]
-        scores[pid] = scores.get(pid, 0.0) + 1.0 / (K + rank)
-        posts_map.setdefault(pid, p)
+    for source in (semantic_results, ts_results):
+        for rank, p in enumerate(source):
+            pid = p["id"]
+            scores[pid] = scores.get(pid, 0.0) + 1.0 / (K + rank)
+            posts_map.setdefault(pid, p)
 
     sorted_ids = sorted(scores.keys(), key=lambda i: scores[i], reverse=True)
     return [posts_map[pid] for pid in sorted_ids[:limit]]

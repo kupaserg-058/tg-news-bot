@@ -1,7 +1,7 @@
 """Утилиты форматирования: HTML-экранирование, разбиение длинных сообщений, даты."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytz
 
@@ -62,6 +62,28 @@ def fmt_dt(dt: datetime, with_time: bool = True) -> str:
     if with_time:
         return local.strftime("%d.%m %H:%M")
     return local.strftime("%d.%m.%Y")
+
+
+def fmt_post_age(dt: datetime) -> str:
+    """Дата поста вместе с явным возрастом — «сегодня 14:23», «вчера 09:10»,
+    «23.08 (3 дня назад)», «10.07.2026 (47 дней назад)».
+
+    Нужно именно для промптов: раньше модель получала только «дд.мм ЧЧ:ММ»
+    без года, и не могла отличить вчерашнюю новость от прошлогодней.
+    """
+    local = dt.astimezone(_tz)
+    now = datetime.now(timezone.utc)
+    days = (now - dt).days
+
+    if days <= 0:
+        return f"сегодня {local:%H:%M}"
+    if days == 1:
+        return f"вчера {local:%H:%M}"
+    if days < 7:
+        return f"{local:%d.%m} ({days} дня назад)" if 2 <= days <= 4 else f"{local:%d.%m} ({days} дней назад)"
+    if days < 365:
+        return f"{local:%d.%m} ({days} дней назад)"
+    return f"{local:%d.%m.%Y} ({days} дней назад)"
 
 
 def truncate(text: str, max_len: int = 200) -> str:

@@ -4,6 +4,7 @@ from datetime import datetime
 import pytz
 
 from config import TIMEZONE, CATEGORIES, category_label
+from formatters.utils import fmt_post_age
 
 
 _tz = pytz.timezone(TIMEZONE)
@@ -24,6 +25,16 @@ TELEGRAM_HTML_RULES = (
 )
 
 
+RECENCY_RULES = (
+    "ВОЗРАСТ ПОСТОВ: у каждого поста из базы в скобках указано, когда он вышел — "
+    "«сегодня 14:23», «вчера 09:10», «10.07 (47 дней назад)». Это значимая информация, не игнорируй её. "
+    "Опирайся прежде всего на свежие посты. Старый пост используй только если он действительно "
+    "объясняет тему, и тогда ОБЯЗАТЕЛЬНО помечай возраст прямо в тексте: «ещё месяц назад…», «в июле…». "
+    "Никогда не подавай старую новость как свежую. "
+    "Если по теме в базе только старое — прямо скажи: «свежего нет, последнее было N дней назад»."
+)
+
+
 def _now() -> str:
     return datetime.now(_tz).strftime("%d.%m.%Y %H:%M")
 
@@ -37,7 +48,7 @@ def _format_posts_block(posts: list[dict], max_chars_per_post: int = 400) -> str
         text = " ".join(p["text"].split())
         if len(text) > max_chars_per_post:
             text = text[: max_chars_per_post - 1] + "…"
-        when = p["posted_at"].astimezone(_tz).strftime("%d.%m %H:%M")
+        when = fmt_post_age(p["posted_at"])
         lines.append(
             f'[{i}] {p["channel_username"]} ({p["channel_type"]}, {when})\n{text}\nlink: {p["link"]}'
         )
@@ -54,7 +65,7 @@ def _format_news_block(news_posts: list[dict]) -> str:
         text = " ".join(p["text"].split())
         if len(text) > 400:
             text = text[:399] + "…"
-        when = p["posted_at"].strftime("%d.%m %H:%M")
+        when = fmt_post_age(p["posted_at"])
         cat = category_label(p.get("category")) if p.get("category") else "—"
         out.append(f'[N{i}] {p["channel_username"]} ({when}, категория: {cat})\n{text}\nlink: {p["link"]}')
     return "\n\n".join(out)
@@ -68,7 +79,7 @@ def _format_experts_block(expert_posts: list[dict]) -> str:
         text = " ".join(p["text"].split())
         if len(text) > 300:
             text = text[:299] + "…"
-        when = p["posted_at"].strftime("%d.%m %H:%M")
+        when = fmt_post_age(p["posted_at"])
         out.append(f'[E{i}] {p["channel_username"]} ({when})\n{text}\nlink: {p["link"]}')
     return "\n\n".join(out)
 
@@ -124,6 +135,8 @@ def build_why_prompt(topic: str, posts: list[dict]) -> str:
     return f"""{MARK_PERSONA}
 
 {TELEGRAM_HTML_RULES}
+
+{RECENCY_RULES}
 
 Сейчас {_now()}. Тема: «{topic}». Разбери глубоко. Структура (HTML-разметка Telegram: <b>, <i>, <a href="...">; никакого markdown):
 
@@ -192,6 +205,8 @@ def build_chronicle_prompt(topic: str, posts: list[dict]) -> str:
 
 {TELEGRAM_HTML_RULES}
 
+{RECENCY_RULES}
+
 Сейчас {_now()}. Тема: «{topic}». Собери хронику событий по этой теме на основе постов из базы (и, при нехватке, Google Search). Структура:
 
 <b>📜 Хроника: {topic}</b>
@@ -246,6 +261,8 @@ def build_free_prompt(question: str, posts: list[dict], history: list[dict] | No
 
 {TELEGRAM_HTML_RULES}
 
+{RECENCY_RULES}
+
 {history_block}Сейчас {_now()}. Друг спрашивает: «{question}». Структура (HTML: <b>, <i>, <a href="...">; никакого markdown):
 
 <b>📰 Факты</b>
@@ -279,7 +296,9 @@ def build_free_prompt(question: str, posts: list[dict], history: list[dict] | No
 
 def build_map_prompt(topic: str, posts: list[dict]) -> str:
     posts_block = _format_posts_block(posts, max_chars_per_post=300)
-    return f"""Тема: «{topic}». Построй граф связей в формате D2. Каждому узлу присвой одну из 4 позиций по отношению к теме.
+    return f"""У постов из базы указан возраст. Строй граф по актуальному состоянию темы: опирайся на свежие посты, старые бери только для узлов-предысторий.
+
+Тема: «{topic}». Построй граф связей в формате D2. Каждому узлу присвой одну из 4 позиций по отношению к теме.
 
 ЖЁСТКИЕ ПРАВИЛА СИНТАКСИСА (нарушение ломает рендер):
 1. Верни ТОЛЬКО код, обёрнутый в ```d2 ... ``` (тройные бэктики). Никакого текста до или после блока.
